@@ -5,10 +5,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { mockEvents } from '@/mocks/data/events';
 import { EventCategory, Event } from '@/types';
 import EventCard from '@/components/EventCard';
 import EventCardSkeleton from '@/components/skeletons/EventCardSkeleton';
+import { eventsApi } from '@/lib/api-client';
 import {
     FiSearch, FiMap, FiList, FiFilter, FiX, FiCalendar, FiDollarSign, FiTag, FiCheck, FiHash,
     FiMapPin, FiNavigation, FiLayers, FiZoomIn, FiZoomOut, FiCrosshair
@@ -453,15 +453,46 @@ export default function DiscoverPage() {
         }
     });
 
-    // Fetch events
+    // Fetch events from Supabase
     useEffect(() => {
-        const timer = setTimeout(() => {
-            // Mock data - assuming mockEvents is cast as ExtendedEvent[]
-            setEvents(mockEvents as ExtendedEvent[]);
-            setIsLoading(false);
-        }, 800);
+        const fetchEvents = async () => {
+            setIsLoading(true);
+            try {
+                const result = await eventsApi.getAll({
+                    status: 'published',
+                    limit: 50
+                });
+                
+                if (result.data) {
+                    // Transform the data to match ExtendedEvent interface
+                    const transformedEvents = result.data.map((event: any) => ({
+                        ...event,
+                        features: event.has_nft_tickets ? ['nft'] : [],
+                        // Ensure location has the right structure
+                        location: {
+                            name: event.location?.name || 'Unknown Location',
+                            address: event.location?.address || '',
+                            city: event.location?.city || '',
+                            coordinates: {
+                                lat: event.location?.coordinates?.lat || 0,
+                                lng: event.location?.coordinates?.lng || 0
+                            }
+                        }
+                    }));
+                    setEvents(transformedEvents);
+                } else if (result.error) {
+                    console.error('Failed to fetch events:', result.error);
+                    setEvents([]);
+                }
+            } catch (error) {
+                console.error('Error fetching events:', error);
+                setEvents([]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-        return () => clearTimeout(timer);
+        fetchEvents();
     }, []);
 
     // Handle clicks outside filter panel

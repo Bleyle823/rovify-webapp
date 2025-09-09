@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { FiUser, FiMail, FiLock, FiEye, FiEyeOff, FiArrowRight, FiCheck } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import RoviLogo from '@/public/images/contents/rovi-logo.png';
 import GoogleIcon from '@/public/images/icons/google-logo.svg';
 import MetaMaskIcon from '@/public/images/icons/metamask-logo.svg';
@@ -13,6 +14,7 @@ import AppleIcon from '@/public/images/icons/apple-logo.svg';
 
 export default function RegisterPage() {
     const router = useRouter();
+    const { register, loginWithProvider } = useAuth();
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -90,14 +92,27 @@ export default function RegisterPage() {
         setIsLoading(true);
 
         try {
-            // Simulate API call
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // For demo, we'll just redirect to home
-            router.push('/auth/login');
-        } catch (err) {
-            setError('Registration failed. Please try again.');
+            await register(formData.name, formData.email, formData.password);
+            console.log('🔐 REGISTER: Registration successful');
+            // Success feedback will be handled by AuthContext redirect
+        } catch (error) {
+            console.error('🔐 REGISTER ERROR:', error);
+            setError(error instanceof Error ? error.message : 'Registration failed. Please try again.');
         } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Handle Google registration
+    const handleGoogleSignup = async () => {
+        try {
+            console.log('🔐 REGISTER: Starting Google OAuth...');
+            setIsLoading(true);
+            
+            await loginWithProvider('google');
+        } catch (error) {
+            console.error('🔐 REGISTER ERROR: Google OAuth failed:', error);
+            setError(error instanceof Error ? error.message : 'Google authentication failed');
             setIsLoading(false);
         }
     };
@@ -350,7 +365,11 @@ export default function RegisterPage() {
                         </div>
 
                         <div className="mt-4 flex justify-center gap-3">
-                            <button className="neumorph-button flex justify-center items-center py-2.5 px-6 rounded-xl bg-white hover:bg-gray-50 transition-colors">
+                            <button 
+                                onClick={handleGoogleSignup}
+                                disabled={isLoading}
+                                className="neumorph-button flex justify-center items-center py-2.5 px-6 rounded-xl bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                                 <Image src={GoogleIcon} alt="Google" width={20} height={20} />
                             </button>
                             {/* <button className="neumorph-button flex justify-center items-center py-2.5 px-6 rounded-xl bg-white hover:bg-gray-50 transition-colors">

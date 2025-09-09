@@ -75,20 +75,24 @@ export interface UserPreferences {
 
 export interface User {
     id: string;
-    name: string;
-    username: string;
-    email: string;
-    image: string;
-    bio: string;
-    interests: string[];
-    followers: number;
-    following: number;
-    walletAddress: string;
-    savedEvents: string[];
-    attendedEvents: string[];
-    createdEvents: string[];
-    preferences: UserPreferences;
-    verified: boolean;
+    name?: string;
+    username?: string;
+    email?: string;
+    image?: string;
+    bio?: string;
+    interests?: string[];
+    followers?: number;
+    following?: number;
+    walletAddress?: string;
+    savedEvents?: string[];
+    attendedEvents?: string[];
+    createdEvents?: string[];
+    preferences?: UserPreferences;
+    verified?: boolean;
+    authMethod?: 'email' | 'google' | 'metamask' | 'base';
+    role?: 'admin' | 'attendee' | 'organiser';
+    baseName?: string;
+    ethName?: string;
     [key: string]: unknown; // Allowing additional properties
 }
 

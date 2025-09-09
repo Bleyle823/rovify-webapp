@@ -246,7 +246,7 @@ const base64UrlEncode = (buffer: ArrayBuffer): string => {
 export default function LoginPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { login } = useAuth();
+    const { login, loginWithProvider, isAuthenticated } = useAuth();
     const { authenticateWithBase, isLoading: isBaseLoading, error: baseError } = useBaseAuth();
 
     const [email, setEmail] = useState('');
@@ -266,6 +266,21 @@ export default function LoginPage() {
     const [logoClickCount, setLogoClickCount] = useState(0);
     const [showSecretPanel, setShowSecretPanel] = useState(false);
     const [secretSequence, setSecretSequence] = useState<string[]>([]);
+
+    // If authenticated, ensure we leave auth pages immediately
+    useEffect(() => {
+        if (isAuthenticated) {
+            router.replace('/home');
+        }
+    }, [isAuthenticated, router]);
+
+    // Fallback: when success overlay shows, force redirect shortly after
+    useEffect(() => {
+        if (showSuccess) {
+            const t = setTimeout(() => router.replace('/home'), 300);
+            return () => clearTimeout(t);
+        }
+    }, [showSuccess, router]);
 
     // Store auth challenge state
     const [metaMaskChallenge, setMetaMaskChallenge] = useState('');
@@ -315,15 +330,17 @@ export default function LoginPage() {
             }
 
             // Secret sequence detection
-            const key = e.key.toLowerCase();
-            const newSequence = [...secretSequence, key];
-            if (newSequence.length > 10) newSequence.shift();
-            setSecretSequence(newSequence);
+            const key = e.key?.toLowerCase() || '';
+            if (key) {
+                const newSequence = [...secretSequence, key];
+                if (newSequence.length > 10) newSequence.shift();
+                setSecretSequence(newSequence);
 
-            if (newSequence.join('').includes('demo')) {
-                setShowSecretPanel(true);
-                setSecretSequence([]);
-                setTimeout(() => setShowSecretPanel(false), 10000);
+                if (newSequence.join('').includes('demo')) {
+                    setShowSecretPanel(true);
+                    setSecretSequence([]);
+                    setTimeout(() => setShowSecretPanel(false), 10000);
+                }
             }
         };
 
@@ -385,7 +402,6 @@ export default function LoginPage() {
 
             setShowSuccess(true);
             setTimeout(() => {
-                login(userData);
                 console.log('Google authentication successful, redirecting to home');
                 window.history.replaceState({}, document.title, window.location.pathname);
                 router.push('/home');
@@ -462,44 +478,22 @@ export default function LoginPage() {
     // Handle email/password login
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        console.log('Processing email/password login...');
+        console.log('🔐 LOGIN: Form submitted with email:', email);
+
+        if (!email || !password) {
+            setError('Please enter both email and password');
+            return;
+        }
+
         setIsLoading(true);
         setError('');
 
         try {
-            console.log('Authenticating:', email);
-
-            // Check for demo credentials
-            const isAdminDemo = email === DEMO_CREDENTIALS.admin.email && password === DEMO_CREDENTIALS.admin.password;
-            const isOrganiserDemo = email === DEMO_CREDENTIALS.organiser.email && password === DEMO_CREDENTIALS.organiser.password;
-            const isAttendeeDemo = email === DEMO_CREDENTIALS.attendee.email && password === DEMO_CREDENTIALS.attendee.password;
-
-            if (isAdminDemo || isOrganiserDemo || isAttendeeDemo) {
-                const userData = isAdminDemo ? DEMO_CREDENTIALS.admin.userData :
-                    isOrganiserDemo ? DEMO_CREDENTIALS.organiser.userData :
-                        DEMO_CREDENTIALS.attendee.userData;
-
-                console.log('Demo authentication successful for role:', userData.role);
-
-                setShowSuccess(true);
-                setTimeout(async () => {
-                    await login(userData);
-                    const redirectPath = userData.role === 'admin' ? '/admin-dashboard' :
-                        userData.role === 'organiser' ? '/organiser-dashboard' :
-                            '/home';
-                    console.log('Demo login successful, redirecting to:', redirectPath);
-                    router.push(redirectPath);
-                }, 1500);
-            } else {
-                console.log('Regular email/password authentication');
-                setShowSuccess(true);
-                setTimeout(async () => {
-                    await login(email, password);
-                    console.log('Regular login successful');
-                }, 1500);
-            }
+            await login(email, password);
+            setShowSuccess(true);
+            console.log('🔐 LOGIN: Login successful');
         } catch (error) {
-            console.error('Email login error:', error);
+            console.error('🔐 LOGIN ERROR:', error);
             setError(error instanceof Error ? error.message : 'Invalid email or password. Please try again.');
         } finally {
             setIsLoading(false);
@@ -509,44 +503,13 @@ export default function LoginPage() {
     // Handle Google login
     const handleGoogleLogin = async () => {
         try {
-            console.log('Starting Google authentication...');
+            console.log('🔐 LOGIN: Starting Google OAuth...');
             setIsLoading(true);
-
-            localStorage.setItem('pkce_verifier', pkceVerifier);
-            console.log('PKCE verifier stored in localStorage');
-
-            const codeChallengeBuffer = await sha256(pkceVerifier);
-            const codeChallenge = base64UrlEncode(codeChallengeBuffer);
-            console.log('Code challenge generated:', codeChallenge.substring(0, 10) + '...');
-
-            localStorage.setItem('oauth_state', oauthState);
-            console.log('OAuth state stored for CSRF protection');
-
-            const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-            if (!clientId) {
-                console.error('Google OAuth client ID not found');
-                throw new Error('Authentication configuration error');
-            }
-
-            const redirectUri = getOAuthRedirectUri('google');
-            console.log('Using redirect URI:', redirectUri);
-
-            const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-                `client_id=${clientId}` +
-                `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-                `&response_type=code` +
-                `&scope=openid email profile` +
-                `&state=${oauthState}` +
-                `&code_challenge=${codeChallenge}` +
-                `&code_challenge_method=S256`;
-
-            console.log('Google OAuth URL generated (partial):',
-                googleOAuthUrl.substring(0, 100) + '...');
-
-            window.location.href = googleOAuthUrl;
+            
+            await loginWithProvider('google');
         } catch (error) {
-            console.error('Google auth error:', error);
-            setError(error instanceof Error ? error.message : 'Google authentication failed. Please try again.');
+            console.error('🔐 LOGIN ERROR: Google OAuth failed:', error);
+            setError(error instanceof Error ? error.message : 'Google authentication failed');
             setIsLoading(false);
         }
     };

@@ -23,6 +23,7 @@ import { IoGameControllerOutline, IoTicketOutline, IoSparkles } from "react-icon
 import { GiPartyPopper } from "react-icons/gi";
 import EchoChatWidget from "./EchoChatWidget";
 import EventMapWidget from "./EventMapWidget";
+import { eventsApi } from '@/lib/api-client';
 
 // Types
 interface Event {
@@ -825,13 +826,61 @@ export default function HomePage() {
     const [isMobileBottomSheetOpen, setIsMobileBottomSheetOpen] = useState(false);
     const [sidebarLoading, setSidebarLoading] = useState(true);
 
-    // Load events
+    // Load events from Supabase
     useEffect(() => {
-        const timer = setTimeout(() => {
-            setEvents(PRODUCTION_EVENTS);
-            setIsLoading(false);
-        }, 1000);
-        return () => clearTimeout(timer);
+        const fetchEvents = async () => {
+            setIsLoading(true);
+            try {
+                const result = await eventsApi.getAll({
+                    status: 'published',
+                    limit: 20
+                });
+                
+                if (result.data) {
+                    // Transform Supabase data to match HomePage Event interface
+                    const transformedEvents = result.data.map((event: any) => ({
+                        id: event.id,
+                        title: event.title,
+                        image: event.image || 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=600&h=400&fit=crop',
+                        date: new Date(event.date),
+                        location: {
+                            name: event.location?.name || 'Unknown Location',
+                            address: event.location?.address || 'Unknown Address',
+                            coordinates: {
+                                lat: event.location?.coordinates?.lat || 0,
+                                lng: event.location?.coordinates?.lng || 0
+                            }
+                        },
+                        price: {
+                            min: event.price?.min ? `$${event.price.min}` : 'Free',
+                            amount: event.price?.min || 0
+                        },
+                        attendees: event.sold_tickets || 0,
+                        category: event.category?.toLowerCase() || 'general',
+                        creator: {
+                            name: event.organiser?.name || 'Unknown Organiser',
+                            avatar: event.organiser?.image || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face',
+                            verified: event.organiser?.verified || false
+                        },
+                        description: event.description || 'No description available',
+                        tags: event.tags || [],
+                        isHot: event.is_featured || Math.random() > 0.7, // Use featured or random for demo
+                        isFeatured: event.is_featured || false
+                    }));
+                    setEvents(transformedEvents);
+                } else {
+                    console.error('Failed to fetch events:', result.error);
+                    setEvents([]);
+                }
+            } catch (error) {
+                console.error('Error fetching events:', error);
+                setEvents([]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchEvents();
     }, []);
 
     // Load sidebar

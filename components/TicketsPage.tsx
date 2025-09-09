@@ -6,18 +6,17 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { FiCalendar, FiMapPin, FiClock, FiTag, FiSend, FiDownload, FiShare2 } from 'react-icons/fi';
-import { getUserTickets } from '@/mocks/data/tickets';
-import { getEventById } from '@/mocks/data/events';
-import { getCurrentUser } from '@/mocks/data/users';
 import { Ticket, Event, User } from '@/types';
+import { ticketsApi, eventsApi } from '@/lib/api-client';
+import { useAuth } from '@/context/AuthContext';
 import BottomNavigation from '@/components/SideNavigation';
 import Header from '@/components/Header';
 
 export default function TicketsPage() {
     const router = useRouter();
+    const { user, isAuthenticated } = useAuth();
     const [userTickets, setUserTickets] = useState<Array<Ticket & { event: Event }>>([]);
     const [availableEvents, setAvailableEvents] = useState<Event[]>([]);
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [activeTab, setActiveTab] = useState<'mytickets' | 'marketplace'>('mytickets');
     const [ticketView, setTicketView] = useState<'upcoming' | 'past' | 'nft'>('upcoming');
     const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
@@ -29,27 +28,46 @@ export default function TicketsPage() {
     const [ticketType, setTicketType] = useState<'GENERAL' | 'VIP'>('GENERAL');
 
     useEffect(() => {
-        // Simulate API fetch
-        const timer = setTimeout(() => {
-            const user = getCurrentUser();
-            setCurrentUser(user);
+        const fetchUserTickets = async () => {
+            if (!isAuthenticated || !user) {
+                setIsLoading(false);
+                return;
+            }
 
-            // Get user tickets with event data
-            const tickets = getUserTickets(user.id).map(ticket => {
-                const event = getEventById(ticket.eventId)!;
-                return { ...ticket, event };
-            });
-            setUserTickets(tickets);
+            try {
+                setIsLoading(true);
+                
+                // Fetch user's tickets
+                const ticketsResult = await ticketsApi.getUserTickets();
+                if (ticketsResult.data) {
+                    setUserTickets(ticketsResult.data);
+                } else {
+                    console.error('Failed to fetch tickets:', ticketsResult.error);
+                    setUserTickets([]);
+                }
 
-            // For marketplace tab
-            const upcomingEvents = tickets.map(ticket => ticket.event);
-            setAvailableEvents(upcomingEvents);
+                // Fetch available events for marketplace
+                const eventsResult = await eventsApi.getAll({
+                    status: 'published',
+                    limit: 20
+                });
+                if (eventsResult.data) {
+                    setAvailableEvents(eventsResult.data);
+                } else {
+                    console.error('Failed to fetch events:', eventsResult.error);
+                    setAvailableEvents([]);
+                }
+            } catch (error) {
+                console.error('Error fetching tickets:', error);
+                setUserTickets([]);
+                setAvailableEvents([]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-            setIsLoading(false);
-        }, 1000);
-
-        return () => clearTimeout(timer);
-    }, []);
+        fetchUserTickets();
+    }, [isAuthenticated, user]);
 
     // Filter user tickets based on selected view
     const now = new Date();
@@ -79,13 +97,42 @@ export default function TicketsPage() {
         setPurchaseStep(2);
     };
 
-    const completePayment = () => {
-        // Simulate API call
-        setTimeout(() => {
-            setIsPurchasing(false);
-            // Show success message or redirect
-            router.push('/success?type=ticket');
-        }, 1000);
+    const completePayment = async () => {
+        if (!selectedEvent || !user) return;
+
+        try {
+            setIsLoading(true);
+            
+            // Purchase ticket using real API
+            const result = await ticketsApi.purchase({
+                event_id: selectedEvent.id,
+                type: ticketType,
+                tier_name: ticketType,
+                payment_method: 'stripe', // Default to stripe for now
+                seat_info: {
+                    section: 'General',
+                    timeSlot: new Date().toISOString()
+                }
+            });
+
+            if (result.data) {
+                setIsPurchasing(false);
+                // Refresh user tickets
+                const ticketsResult = await ticketsApi.getUserTickets();
+                if (ticketsResult.data) {
+                    setUserTickets(ticketsResult.data);
+                }
+                router.push('/success?type=ticket');
+            } else {
+                console.error('Purchase failed:', result.error);
+                alert('Purchase failed: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Purchase error:', error);
+            alert('Purchase failed. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // Calculate price based on ticket type and quantity
